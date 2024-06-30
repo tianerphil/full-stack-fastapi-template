@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 import emails  # type: ignore
 import jwt
@@ -115,3 +115,30 @@ def verify_password_reset_token(token: str) -> str | None:
         return str(decoded_token["sub"])
     except InvalidTokenError:
         return None
+
+import boto3
+import requests
+from app.core.config import settings
+
+s3_client = boto3.client('s3',
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+)
+
+def upload_to_s3(media_data: str, file_type: str) -> str:
+    # Implement actual S3 upload logic here
+    # Return the S3 URL of the uploaded file
+    pass
+
+def delete_from_s3(s3_url: str) -> bool:
+    # Implement actual S3 deletion logic here
+    # Return True if deletion was successful, False otherwise
+    pass
+
+def generate_media_from_text(request_data: dict, user_id: int):
+    # Implement actual RunPod serverless call for text-to-image generation
+    pass
+
+def generate_media_from_media(request_data: dict, user_id: int, origin_s3_url: str):
+    # Implement actual RunPod serverless call for image-to-image generation
+    pass

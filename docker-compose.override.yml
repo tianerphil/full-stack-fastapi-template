@@ -63,6 +63,45 @@ services:
     # command: sleep infinity  # Infinite loop to keep container alive doing nothing
     command: /start-reload.sh
 
+
+  celery_worker:
+    restart: "no"
+    volumes:
+      - ./backend/:/app
+    build:
+      context: ./backend
+      args:
+        INSTALL_DEV: ${INSTALL_DEV-true}
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4 --autoscale=10,4 --pool=prefork
+
+
+  celery_beat:
+    restart: "no"
+    volumes:
+      - ./backend/:/app
+    build:
+      context: ./backend
+      args:
+        INSTALL_DEV: ${INSTALL_DEV-true}
+    command: celery -A app.worker.celery_app beat --loglevel=info
+
+  flower:
+    restart: "no"
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./backend/:/app
+    build:
+      context: ./backend
+      args:
+        INSTALL_DEV: ${INSTALL_DEV-true}
+    command: celery -A app.worker.celery_app flower
+
+  redis:
+    restart: "no"
+    ports:
+      - "6379:6379"
+
   frontend:
     restart: "no"
     build:

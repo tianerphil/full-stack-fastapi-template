@@ -1,1 +1,37 @@
-Generic single-database configuration.
+alembic data migration steps
+
+I understand you want to clear the old database tables and create new ones based on your updated schema. This is a common scenario when significantly changing your database structure. Here's how you can approach this:
+
+1. First, make sure you have Alembic installed:
+
+pip install alembic
+
+2. Initialize Alembic in your project:
+
+alembic init alembic
+
+3. Drop the existing database (be cautious with this step!):
+
+DROP DATABASE your_database_name;
+CREATE DATABASE your_database_name;
+
+You can run these SQL commands using a PostgreSQL client like psql or through a database management tool.
+
+4. Clear Alembic migration history:
+Delete all migration files in your alembic/versions/ directory, except for env.py.
+
+5. Update env.py: setup target_metadata and setup db url
+
+from app.models import SQLModel  # noqa
+target_metadata = SQLModel.metadata
+
+
+6. Update your models:
+Ensure your SQLAlchemy models reflect the new database structure you want.
+
+7. Create a new initial migration:
+Run the following command:
+alembic revision --autogenerate -m "New initial migration"
+
+8. Apply the new migration:
+alembic upgrade head
