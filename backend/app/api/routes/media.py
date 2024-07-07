@@ -1,8 +1,8 @@
-from typing import Any
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select, func
 from app import crud
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, GenerateMediaByMediaRequestWithCost
 from app.models import (
     Media, MediaResponse, UploadMediaRequest, UploadMediaResponse,
     GenerateMediaFromTextRequest, GenerateMediaFromTextResponse,
@@ -11,14 +11,17 @@ from app.models import (
     UpdateMediaRequest, UpdateMediaResponse, CommentResponse,
     GetCommentsRequest, GetCommentsResponse, AddCommentRequest,
     AddCommentResponse, UpdateMediaRatingRequest, UpdateMediaRatingResponse,
-    GenerationJob, GenerationJobResponse, GetGenerationJobsRequest,
-    GetGenerationJobsResponse
+    GenerationJob, GetGenerationJobsRequest,
+    GetGenerationJobsResponse, GenerationJobResponse
 )
 from app.worker import (
     upload_media_to_s3_task, delete_media_from_s3_task,
     generate_media_from_text_task, generate_media_from_media_task
 )
 from celery.result import AsyncResult
+
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -124,43 +127,66 @@ async def generate_media_from_text(
     upload the source and generated media to s3 and save the media metadata including tags in the database
     commit the credit transactions
     """
-    if not crud.has_sufficient_credits(session, current_user.id, request.num_outputs):
+    if not crud.has_sufficient_credits(session=session, user_id=current_user.id, required_credits=request.num_outputs):
         raise HTTPException(status_code=400, detail="Insufficient credits")
 
-    task = generate_media_from_text_task.delay(request.dict(), current_user.id)
+    task = generate_media_from_text_task.delay(request.model_dump(), current_user.id)
     return GenerateMediaFromTextResponse(task_id=str(task.id))
 
 @router.post("/generate/media", response_model=GenerateMediaByMediaResponse)
 async def generate_media_by_media(
-    request: GenerateMediaByMediaRequest,
+    request: GenerateMediaByMediaRequestWithCost,
     current_user: CurrentUser,
     session: SessionDep
 ):
-    """
-    Generate media based on existing media.
-    this is place holder for celery task.
-    it should check credit balance first
-    get media from rp serverless 
-    then deduct the credit cost for the generation. and generate the credit transactions, and generatejob in the tables
-    upload the source and generated media to s3 and save the media metadata including tags in the database
-    commit the credit transactions
-    """
-    if not crud.has_sufficient_credits(session, current_user.id, request.num_outputs):
+    # Check if user has sufficient credits
+    if not crud.has_sufficient_credits(session=session, user_id=current_user.id, required_credits=request.num_outputs):
         raise HTTPException(status_code=400, detail="Insufficient credits")
 
-    task = generate_media_from_media_task.delay(request.dict(), current_user.id)
-    return GenerateMediaByMediaResponse(task_id=str(task.id))
+    # Enqueue Celery task
+    task = generate_media_from_media_task.delay(request.model_dump(), current_user.id)
 
-@router.get("/task/{task_id}")
+    return GenerateMediaByMediaResponse(
+        task_id=str(task.id),
+        message="Media generation task has been queued"
+    )
+
+
+@router.get("/task/{task_id}", response_model=Dict[str, Any])
 async def get_task_status(task_id: str):
-    task_result = AsyncResult(task_id)
-    if task_result.ready():
-        if task_result.successful():
-            return {"status": "completed", "result": task_result.result}
+    logger.debug(f"Entering get_task_status for task_id: {task_id}")
+    try:
+        logger.debug(f"Creating AsyncResult for task_id: {task_id}")
+        task_result = AsyncResult(task_id)
+
+        logger.debug(f"Checking if task is ready. Ready: {task_result.ready()}")
+        if task_result.ready():
+            logger.debug(f"Task is ready. Checking if successful. Successful: {task_result.successful()}")
+            if task_result.successful():
+                result = task_result.result
+                logger.debug(f"Task completed successfully. Result: {result}")
+                return {
+                    "status": "completed",
+                    "result": result
+                }
+            else:
+                error = str(task_result.result)
+                logger.error(f"Task failed. Error: {error}")
+                return {
+                    "status": "failed",
+                    "error": error
+                }
         else:
-            return {"status": "failed", "error": str(task_result.result)}
-    else:
-        return {"status": "processing"}
+            progress = task_result.info.get('progress', 0) if task_result.info else 0
+            logger.debug(f"Task is still processing. Progress: {progress}")
+            return {
+                "status": "processing",
+                "progress": progress
+            }
+
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred in get_task_status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An error occurred while fetching task status: {str(e)}")
 
 @router.get("/{media_id}/comments", response_model=GetCommentsResponse)
 def get_comments(
@@ -251,7 +277,7 @@ def get_generation_jobs(
     jobs = session.exec(query).all()
 
     return GetGenerationJobsResponse(
-        jobs=[GenerationJobResponse.from_orm(j) for j in jobs],
+        jobs=[GenerationJobResponse.model_validate(j) for j in jobs],
         total=total,
         page=request.page,
         per_page=request.per_page

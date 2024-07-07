@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 902ed9949bc2
+Revision ID: c6886e1c9e8b
 Revises: 
-Create Date: 2024-06-28 11:23:00.748802
+Create Date: 2024-07-04 23:48:29.317454
 
 """
 from alembic import op
@@ -10,8 +10,9 @@ import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
 from app.models import HttpUrlType
 
+
 # revision identifiers, used by Alembic.
-revision = '902ed9949bc2'
+revision = 'c6886e1c9e8b'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -32,17 +33,10 @@ def upgrade():
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('is_superuser', sa.Boolean(), nullable=False),
     sa.Column('full_name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('credit_balance', sa.Integer(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_user_email'), 'user', ['email'], unique=True)
-    op.create_table('credit',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('amount', sa.Integer(), nullable=False),
-    sa.Column('transaction_date', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
     op.create_table('credittransaction',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
@@ -53,23 +47,14 @@ def upgrade():
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_table('media',
+    op.create_table('generationjob',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('media_type', sa.Enum('IMAGE', 'VIDEO', name='mediatype'), nullable=False),
-    sa.Column('file_type', sqlmodel.sql.sqltypes.AutoString(length=10), nullable=False),
-    sa.Column('positive_prompt', sqlmodel.sql.sqltypes.AutoString(length=1000), nullable=False),
-    sa.Column('negative_prompt', sqlmodel.sql.sqltypes.AutoString(length=1000), nullable=True),
-    sa.Column('seed', sa.Integer(), nullable=False),
-    sa.Column('sd_model', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
-    sa.Column('s3_url', HttpUrlType(), nullable=False),
+    sa.Column('credits_consumed', sa.Integer(), nullable=False),
+    sa.Column('job_type', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
+    sa.Column('status', sqlmodel.sql.sqltypes.AutoString(length=20), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('is_public', sa.Boolean(), nullable=False),
-    sa.Column('origin_id', sa.Integer(), nullable=True),
-    sa.Column('view_count', sa.Integer(), nullable=True),
-    sa.Column('thumb_up_count', sa.Integer(), nullable=True),
-    sa.Column('thumb_down_count', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['origin_id'], ['media.id'], ),
+    sa.Column('completed_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -92,25 +77,34 @@ def upgrade():
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('media',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('media_type', sa.Enum('IMAGE', 'VIDEO', name='mediatype'), nullable=False),
+    sa.Column('file_type', sqlmodel.sql.sqltypes.AutoString(length=10), nullable=False),
+    sa.Column('positive_prompt', sqlmodel.sql.sqltypes.AutoString(length=1000), nullable=False),
+    sa.Column('negative_prompt', sqlmodel.sql.sqltypes.AutoString(length=1000), nullable=True),
+    sa.Column('seed', sa.Integer(), nullable=False),
+    sa.Column('sd_model', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
+    sa.Column('s3_url', HttpUrlType(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('is_public', sa.Boolean(), nullable=False),
+    sa.Column('origin_id', sa.Integer(), nullable=True),
+    sa.Column('view_count', sa.Integer(), nullable=True),
+    sa.Column('thumb_up_count', sa.Integer(), nullable=True),
+    sa.Column('thumb_down_count', sa.Integer(), nullable=True),
+    sa.Column('generation_job_id', sa.Integer(), nullable=True),
+    sa.ForeignKeyConstraint(['generation_job_id'], ['generationjob.id'], ),
+    sa.ForeignKeyConstraint(['origin_id'], ['media.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('comment',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('media_id', sa.Integer(), nullable=False),
     sa.Column('content', sqlmodel.sql.sqltypes.AutoString(length=1000), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['media_id'], ['media.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_table('generationjob',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('media_id', sa.Integer(), nullable=False),
-    sa.Column('credits_consumed', sa.Integer(), nullable=False),
-    sa.Column('job_type', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
-    sa.Column('status', sqlmodel.sql.sqltypes.AutoString(length=20), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('completed_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['media_id'], ['media.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -128,13 +122,12 @@ def upgrade():
 def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_table('mediatag')
-    op.drop_table('generationjob')
     op.drop_table('comment')
+    op.drop_table('media')
     op.drop_table('subscription')
     op.drop_table('paymentmethod')
-    op.drop_table('media')
+    op.drop_table('generationjob')
     op.drop_table('credittransaction')
-    op.drop_table('credit')
     op.drop_index(op.f('ix_user_email'), table_name='user')
     op.drop_table('user')
     op.drop_index(op.f('ix_tag_name'), table_name='tag')

@@ -1,19 +1,37 @@
+from datetime import datetime, timezone
+import json
+from typing import Any, Dict, List
 from celery import Celery
 from app.core.config import settings
-from app.utils import upload_to_s3, delete_from_s3, generate_media_from_text, generate_media_from_media
-from app.models import Media, GenerationJob
+from app.utils import generate_presigned_url, upload_to_s3, delete_from_s3, generate_media_from_text, generate_media_from_media, determine_file_type
+from app.models import CreditTransaction, Media, GenerationJob, MediaResponse, MediaType
 from sqlmodel import Session
 from app.core.db import engine
 from app import crud
+from app.api.deps import get_db
 
-celery_app = Celery("worker", broker=settings.REDIS_URL)
+import logging
 
-celery_app.conf.task_routes = {
-    "app.worker.upload_media_to_s3_task": "main-queue",
-    "app.worker.delete_media_from_s3_task": "main-queue",
-    "app.worker.generate_media_from_text_task": "main-queue",
-    "app.worker.generate_media_from_media_task": "main-queue",
-}
+# Set up logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)'
+)
+logger = logging.getLogger(__name__)
+
+celery_app = Celery("worker", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
+
+celery_app.conf.update(
+    task_routes={
+        "app.worker.upload_media_to_s3_task": "main-queue",
+        "app.worker.delete_media_from_s3_task": "main-queue",
+        "app.worker.generate_media_from_text_task": "main-queue",
+        "app.worker.generate_media_from_media_task": "main-queue",
+    },
+    worker_hijack_root_logger=False,  # This prevents Celery from hijacking the root logger
+    worker_log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)',
+    worker_task_log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)'
+)
 
 @celery_app.task(name="upload_media_to_s3_task")
 def upload_media_to_s3_task(media_data: str, file_type: str):
@@ -72,42 +90,101 @@ def generate_media_from_text_task(request_data: dict, user_id: int):
     return [media.id for media in new_media_entries]
 
 @celery_app.task(name="generate_media_from_media_task")
-def generate_media_from_media_task(request_data: dict, user_id: int):
-    generated_media = generate_media_from_media(request_data, user_id, request_data['origin_s3_url'])
+def generate_media_from_media_task(request_data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+    generated_media = generate_media_from_media(request_data, user_id)
+    logger.debug(f'Generated media: {len(generated_media)}')
     
-    with Session(engine) as session:
-        new_media_entries = []
+    db_generator = get_db()
+    
+    try:
+        session = next(db_generator)
+        # Determine the input file type
+        input_file_type = determine_file_type(request_data['input_image'])
+        input_s3_url = upload_to_s3(request_data['input_image'])
+        
+        # Create the GenerationJob first
+        job = GenerationJob(
+            user_id=user_id,
+            credits_consumed=request_data['credit_cost'],
+            job_type="image_to_image",
+            status="completed",
+            created_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc)
+        )
+        session.add(job)
+        session.flush()  # This will assign an id to the job
+
+        input_media = Media(
+            user_id=user_id,
+            media_type=MediaType.IMAGE,  # Assuming the input is always an image
+            file_type=input_file_type,
+            positive_prompt=request_data['positive_prompt'],
+            negative_prompt=request_data['negative_prompt'],
+            seed=0,
+            sd_model=request_data['sd_model'],
+            s3_url=input_s3_url,
+            is_public=request_data['is_public'],
+            created_at=datetime.now(timezone.utc),
+            generation_job_id=job.id  # Associate with the GenerationJob
+        )
+        session.add(input_media)
+        session.flush()
+
+        new_media_entries: List[Media] = []
         for media in generated_media:
+            s3_url = upload_to_s3(media['data'])
+            
             new_media = Media(
                 user_id=user_id,
-                media_type=request_data['media_type'],
-                file_type=media.file_type,
+                media_type=request_data['output_media_type'],
+                file_type=media['file_type'],
                 positive_prompt=request_data['positive_prompt'],
                 negative_prompt=request_data['negative_prompt'],
-                seed=media.seed,
+                seed=media['seed'],
                 sd_model=request_data['sd_model'],
-                s3_url=media.s3_url,
+                s3_url=s3_url,
                 is_public=request_data['is_public'],
-                origin_id=request_data['origin_media_id'],
+                origin_id=input_media.id,
+                created_at=datetime.now(timezone.utc),
+                generation_job_id=job.id  # Associate with the GenerationJob
             )
             session.add(new_media)
             new_media_entries.append(new_media)
+            
+        session.flush()
 
-        session.commit()
-        
-        for new_media in new_media_entries:
-            for tag_name in request_data['tags']:
-                tag = crud.get_or_create_tag(session, tag_name)
-                new_media.tags.append(tag)
+        # prepare response
+        generated_media_responses = []
+        for media in new_media_entries:
+            media_data = media.model_dump()
+            media_data['s3_url'] = generate_presigned_url(str(media.s3_url))
+            generated_media_responses.append(MediaResponse(**media_data))
 
-        job = GenerationJob(
+        crud.deduct_user_credits(session=session, user_id=user_id, amount=request_data['credit_cost'])
+        credit_transaction = CreditTransaction(
             user_id=user_id,
-            media_id=new_media_entries[0].id,
-            credits_consumed=len(new_media_entries),
-            job_type="image_to_image",
-            status="completed"
+            amount=-request_data['credit_cost'],
+            transaction_type="image_generation",
+            transaction_date=datetime.now(timezone.utc),
+            description=f"Generated {len(new_media_entries)} images from input image"
         )
-        session.add(job)
+        session.add(credit_transaction)
         session.commit()
+        session.refresh(job)
+        
 
-    return [media.id for media in new_media_entries]
+        result = {
+            "status": "COMPLETED",
+            "job_id": job.id,
+            #"input_media": input_media_response.model_dump(),
+            "generated_media": [media.model_dump() for media in generated_media_responses],
+            "credits_consumed": request_data['credit_cost']
+        }
+
+        return result
+
+    except Exception as e:
+        session.rollback()
+        raise
+    finally:
+        next(db_generator, None)

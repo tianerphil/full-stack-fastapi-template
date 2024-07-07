@@ -43,3 +43,38 @@ def authenticate(*, session: Session, email: str, password: str) -> User | None:
     if not verify_password(password, db_user.hashed_password):
         return None
     return db_user
+
+# credit related
+def has_sufficient_credits(*, session: Session, user_id: int, required_credits: int) -> bool:
+    # Query the user's current credit balance
+    stmt = select(User.credit_balance).where(User.id == user_id)
+    result = session.exec(stmt).first()
+    
+    if result is None:
+        # User not found
+        return False
+    
+    user_credits = result
+    
+    # Check if the user has enough credits
+    return user_credits >= required_credits
+
+# Function to get the user's current credit balance
+def get_user_credit_balance(*, session: Session, user_id: int) -> int:
+    stmt = select(User.credit_balance).where(User.id == user_id)
+    result = session.exec(stmt).first()
+    return result if result is not None else 0
+
+# Function to deduct credits
+def deduct_user_credits(*, session: Session, user_id: int, amount: int) -> bool:
+    user = session.exec(select(User).where(User.id == user_id)).first()
+    if user is None:
+        return False
+    
+    if user.credit_balance < amount:
+        return False
+    
+    user.credit_balance -= amount
+    session.add(user)
+    session.commit()
+    return True

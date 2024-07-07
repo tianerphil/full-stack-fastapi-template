@@ -11,7 +11,7 @@ from sqlmodel import Session
 from app.core import security
 from app.core.config import settings
 from app.core.db import engine
-from app.models import TokenPayload, User
+from app.models import GenerateMediaByMediaRequest, MediaType, TokenPayload, User
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
@@ -55,3 +55,15 @@ def get_current_active_superuser(current_user: CurrentUser) -> User:
             status_code=403, detail="The user doesn't have enough privileges"
         )
     return current_user
+
+
+CurrentActiveSuperuser = Annotated[User, Depends(get_current_active_superuser)]
+
+def calculate_credit_cost(request: GenerateMediaByMediaRequest) -> GenerateMediaByMediaRequest:
+    if request.output_media_type == MediaType.VIDEO:
+        request.credit_cost = 10 * request.num_outputs
+    else:
+        request.credit_cost = request.num_outputs
+    return request
+
+GenerateMediaByMediaRequestWithCost = Annotated[GenerateMediaByMediaRequest, Depends(calculate_credit_cost)]

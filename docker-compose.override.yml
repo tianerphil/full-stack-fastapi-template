@@ -72,7 +72,7 @@ services:
       context: ./backend
       args:
         INSTALL_DEV: ${INSTALL_DEV-true}
-    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4 --autoscale=10,4 --pool=prefork
+    command: celery -A app.worker.celery_app worker --loglevel=INFO --concurrency=4 --autoscale=10,4 --pool=prefork
 
 
   celery_beat:

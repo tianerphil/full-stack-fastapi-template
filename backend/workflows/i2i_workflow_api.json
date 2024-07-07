@@ -1,0 +1,154 @@
+{
+  "63": {
+    "inputs": {
+      "seed": 0,
+      "steps": 30,
+      "cfg": 8,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": [
+        "70",
+        0
+      ],
+      "positive": [
+        "66",
+        0
+      ],
+      "negative": [
+        "67",
+        0
+      ],
+      "latent_image": [
+        "65",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "64": {
+    "inputs": {
+      "ckpt_name": "majicmixRealistic_v7.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "65": {
+    "inputs": {
+      "width": 720,
+      "height": 1280,
+      "batch_size": 4
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "66": {
+    "inputs": {
+      "text": "cute boy playing on the beach",
+      "clip": [
+        "64",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "67": {
+    "inputs": {
+      "text": "blurry, noisy, messy, lowres, artifacts, ill, distorted, malformed, double body, double head, multiple limbs, extra arms, extra legs, multiple heads, disfigured, deformed, glitch, unnatural, unnormal, asymmetrical, duplicated, blur, noise, low quality, bad anatomy, bad proportions, extra fingers, extra toes, mutated, malformed, out of frame, poorly drawn face, poorly drawn hands, poorly drawn feet, bad composition, bad perspective",
+      "clip": [
+        "64",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "68": {
+    "inputs": {
+      "samples": [
+        "63",
+        0
+      ],
+      "vae": [
+        "64",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "69": {
+    "inputs": {
+      "filename_prefix": "IPAdapter",
+      "images": [
+        "68",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "70": {
+    "inputs": {
+      "weight": 0.5,
+      "start_at": 0,
+      "end_at": 1,
+      "weight_type": "standard",
+      "model": [
+        "73",
+        0
+      ],
+      "ipadapter": [
+        "73",
+        1
+      ],
+      "image": [
+        "72",
+        0
+      ]
+    },
+    "class_type": "IPAdapter",
+    "_meta": {
+      "title": "IPAdapter"
+    }
+  },
+  "72": {
+    "inputs": {
+      "image": "P_boy1 (3).jpg",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "73": {
+    "inputs": {
+      "preset": "STANDARD (medium strength)",
+      "model": [
+        "64",
+        0
+      ]
+    },
+    "class_type": "IPAdapterUnifiedLoader",
+    "_meta": {
+      "title": "IPAdapter Unified Loader"
+    }
+  }
+}

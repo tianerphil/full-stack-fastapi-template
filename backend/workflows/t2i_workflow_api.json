@@ -1,0 +1,107 @@
+{
+  "3": {
+    "inputs": {
+      "seed": 156680208700286,
+      "steps": 30,
+      "cfg": 8,
+      "sampler_name": "dpmpp_2m_sde_gpu",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "4": {
+    "inputs": {
+      "ckpt_name": "majicmixRealistic_v7.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "5": {
+    "inputs": {
+      "width": 720,
+      "height": 1280,
+      "batch_size": 4
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "beautiful scenery nature glass bottle landscape, , purple galaxy bottle,",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "pos_prompt"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "Skinny, Blurry Face, Low quality, Cartoonlike, Drawing, Fake, abnormally long torso, ugly, deformed, malformed, lowres, mutant, mutated, disfigured, compressed, noise, artifacts, dithering, simple, watermark, text, font, signage, collage, pixel, deformed body parts, 1 arm, 3 arms, broken arms, 1 leg, 3 legs, broken legs, 2 belly buttons, squished face, mutilated body parts, 4 legs, deformed body parts, deformed penis, upside-down penis, deformed scrotum, testicles above penis, deformed eyes, 3 people, 4 people, connected penis, vagina, deformed nose, deformed teeth, Unnatural positions, Extra limbs, Extra fingers, Abnormal hands, Unnatural hands, 1 person, abnormal Abnominal muscles, deformed abdominal muscles",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "neg_prompt"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "last_node"
+    }
+  }
+}

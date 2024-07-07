@@ -10,7 +10,7 @@ from jinja2 import Template
 from jwt.exceptions import InvalidTokenError
 
 from app.core.config import settings
-
+from pydantic import HttpUrl
 
 @dataclass
 class EmailData:
@@ -115,30 +115,212 @@ def verify_password_reset_token(token: str) -> str | None:
         return str(decoded_token["sub"])
     except InvalidTokenError:
         return None
-
+# AWS S3 related functions
 import boto3
-import requests
+import base64
+import io
+import uuid
+import imghdr
+import re
+from botocore.exceptions import ClientError
 from app.core.config import settings
+from urllib.parse import urlparse
+from botocore.config import Config
 
 s3_client = boto3.client('s3',
+    config=Config(signature_version='s3v4'),
     aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    region_name=settings.AWS_REGION
 )
 
-def upload_to_s3(media_data: str, file_type: str) -> str:
-    # Implement actual S3 upload logic here
-    # Return the S3 URL of the uploaded file
-    pass
+def generate_presigned_url(s3_url: str, expiration: int = 3600) -> str:
+    parsed_url = urlparse(s3_url)
+    bucket_name = parsed_url.netloc.split('.')[0]
+    object_key = parsed_url.path.lstrip('/')
+    
+    presigned_url = s3_client.generate_presigned_url('get_object',
+                                Params={'Bucket': bucket_name,
+                                        'Key': object_key},
+                                ExpiresIn=expiration)
+    return presigned_url
+
+
+def determine_file_type(base64_data: str) -> str:
+    try:
+        # Check if the string starts with a data URL prefix
+        match = re.match(r'data:image/(\w+);base64,', base64_data)
+        if match:
+            # If it's a data URL, return the image type from the prefix
+            return match.group(1)
+        
+        # If it's not a data URL, try to decode and determine the type
+        # Remove any whitespace and newline characters
+        base64_data = base64_data.strip()
+        
+        # Decode the base64 string
+        image_data = base64.b64decode(base64_data)
+        
+        # Use imghdr to determine the image type
+        file_type = imghdr.what(None, h=image_data)
+        
+        return file_type if file_type else "unknown"
+    except Exception as e:
+        print(f"Error in determine_file_type: {str(e)}")
+        return "unknown"
+    
+def upload_to_s3(media_data: str, is_public: bool = False) -> str:
+    try:
+        # Decode the base64 string
+        file_content = base64.b64decode(media_data)
+
+        # Determine the file type
+        file_type = imghdr.what(None, file_content)
+        if file_type is None:
+            raise ValueError("Unable to determine file type or unsupported image format")
+
+        # Generate a unique filename
+        filename = f"{uuid.uuid4()}.{file_type}"
+
+        # Determine the appropriate key based on public/private status
+        key = f"{'public' if is_public else 'private'}/{filename}"
+
+        # Set up ExtraArgs
+        extra_args = {
+            "ContentType": f"image/{file_type}"
+        }
+        if is_public:
+            extra_args["ACL"] = "public-read"
+
+        # Upload the file to S3
+        s3_client.upload_fileobj(
+            io.BytesIO(file_content), 
+            settings.S3_BUCKET_NAME, 
+            key,
+            ExtraArgs=extra_args
+        )
+
+        # Generate and return the S3 URL
+        s3_url = f"https://{settings.S3_BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
+        
+        return s3_url
+
+    except ValueError as ve:
+        raise ve
+    except Exception as e:
+        raise Exception(f"Error uploading to S3: {str(e)}")
 
 def delete_from_s3(s3_url: str) -> bool:
-    # Implement actual S3 deletion logic here
-    # Return True if deletion was successful, False otherwise
-    pass
+    try:
+        # Parse the S3 URL to extract bucket name and key
+        parsed_url = urlparse(s3_url)
+        bucket_name = parsed_url.netloc.split('.')[0]
+        key = parsed_url.path.lstrip('/')
+
+        # Delete the object
+        s3_client.delete_object(Bucket=bucket_name, Key=key)
+
+        # Check if the object still exists
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=key)
+            # If we can still retrieve the object metadata, deletion failed
+            return False
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                # Object not found, which means deletion was successful
+                return True
+            else:
+                # Some other error occurred
+                raise
+
+    except ClientError as e:
+        print(f"Error deleting object from S3: {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return False
+
+# RunPod serverless related functions
+import random
+from typing import List
+from app.ComfyUIClient import ComfyUIClient
+from app.core.config import settings
 
 def generate_media_from_text(request_data: dict, user_id: int):
     # Implement actual RunPod serverless call for text-to-image generation
     pass
 
-def generate_media_from_media(request_data: dict, user_id: int, origin_s3_url: str):
-    # Implement actual RunPod serverless call for image-to-image generation
-    pass
+def generate_media_from_media(request_data: dict, user_id: int) -> List[dict]:
+    try:
+        client = ComfyUIClient(
+            endpoint_url=settings.RUNPOD_ENDPOINT_URL,
+            api_key=settings.RUNPOD_API_KEY,
+            endpoint_id=settings.RUNPOD_ENDPOINT_ID,
+            output_dir=None,  # We don't need local output directory
+            input_dir=None    # We don't need local input directory
+        )
+
+        # Load and update the workflow
+        client.load_workflow(
+            filepath=settings.WORKFLOW_TEMPLATE,
+            load_image_node_number=72,
+            seed_node_number=63,
+            positive_prompt_node_number=66,
+            output_node_number=69,
+            negative_prompt_node_number=67,
+            size_batch_node_number=65
+        )
+
+        # Generate a random seed
+        seed = random.randint(1, 1500000)
+
+        # Update the seed node
+        client.update_seed_node(seed)
+
+        # Update the positive prompt node (need enhancement logic here)
+        client.update_positive_prompt(request_data['positive_prompt'])
+
+        # Update the negative prompt node (need enhancement logic here)
+        #client.update_negative_prompt(request_data['negative_prompt'])
+
+        # Update batch size
+        client.update_output_batch(request_data['num_outputs'])
+
+
+        # Determine the input file type
+        input_file_type = determine_file_type(request_data['input_image'])
+
+        # Prepare the input image (already in base64 format in request_data)
+        image_data = {
+            "name": f"input_image_{user_id}.{input_file_type}",
+            "image": request_data['input_image']
+        }
+        
+        if "images" not in client.payload["input"]:
+            client.payload["input"]["images"] = []
+        client.payload["input"]["images"].append(image_data)
+
+        # Update the image file name in the workflow
+        load_image_node = client.workflow.get(str(client.load_image_node_number))
+        if not load_image_node:
+            raise ValueError(f"Load image node {client.load_image_node_number} not found in the workflow JSON.")
+        load_image_node['inputs']['image'] = image_data['name']
+
+        # Request images asynchronously
+        response = client.queue_prompt_async()
+
+        if response['status'] == "COMPLETED" and 'output' in response and 'message' in response['output']:
+            generated_images = []
+            for img_base64 in response['output']['message']:
+                output_file_type = determine_file_type(img_base64)
+                generated_images.append({
+                    "data": img_base64,
+                    "file_type": output_file_type,
+                    "seed": seed
+                })
+            return generated_images
+        else:
+            raise Exception(f"Job failed with status: {response.get('status', 'Unknown')}")
+
+    except Exception as e:
+        raise Exception(f"Error in generate_media_from_media: {str(e)}")

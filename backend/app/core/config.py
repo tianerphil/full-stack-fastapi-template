@@ -92,15 +92,6 @@ class Settings(BaseSettings):
     # TODO: update type to EmailStr when sqlmodel supports it
     EMAIL_TEST_USER: str = "test@example.com"
     # TODO: update type to EmailStr when sqlmodel supports it
-    FIRST_SUPERUSER: str
-    FIRST_SUPERUSER_PASSWORD: str
-    USERS_OPEN_REGISTRATION: bool = False
-
-    REDIS_URL: str = "redis://redis:6379/0"
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
-    RUNPOD_API_KEY: str
-    RUNPOD_ENDPOINT: str
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
@@ -122,6 +113,26 @@ class Settings(BaseSettings):
         )
 
         return self
+
+    FIRST_SUPERUSER: str
+    FIRST_SUPERUSER_PASSWORD: str
+    USERS_OPEN_REGISTRATION: bool = False
+
+    REDIS_URL: str = "redis://redis:6379/0"
+
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_REGION: str
+    S3_BUCKET_NAME: str
+
+    RUNPOD_ENDPOINT_URL: str
+    RUNPOD_ENDPOINT_ID: str
+    RUNPOD_API_KEY: str
+    WORKFLOW_TEMPLATE: str
+
+    DEBUG: bool = True
+
+    
 
 
 settings = Settings()  # type: ignore

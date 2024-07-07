@@ -65,10 +65,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
       - SENTRY_DSN=${SENTRY_DSN}
       - REDIS_URL=redis://redis:6379/0
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - RUNPOD_API_KEY=${RUNPOD_API_KEY}
-      - RUNPOD_ENDPOINT=${RUNPOD_ENDPOINT}
+
     build:
       context: ./backend
       args:
@@ -115,10 +112,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER?Variable not set}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
       - REDIS_URL=redis://redis:6379/0
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - RUNPOD_API_KEY=${RUNPOD_API_KEY}
-      - RUNPOD_ENDPOINT=${RUNPOD_ENDPOINT}
     command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4 --autoscale=10,4 --pool=prefork
 
   celery_beat:
@@ -138,10 +131,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER?Variable not set}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
       - REDIS_URL=redis://redis:6379/0
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - RUNPOD_API_KEY=${RUNPOD_API_KEY}
-      - RUNPOD_ENDPOINT=${RUNPOD_ENDPOINT}
     command: celery -A app.worker.celery_app beat --loglevel=info
 
   flower:
@@ -157,10 +146,6 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - RUNPOD_API_KEY=${RUNPOD_API_KEY}
-      - RUNPOD_ENDPOINT=${RUNPOD_ENDPOINT}
     command: celery -A app.worker.celery_app flower
     labels:
       - traefik.enable=true
