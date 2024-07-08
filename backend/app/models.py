@@ -244,16 +244,22 @@ class GetMediaByUserResponse(SQLModel):
     per_page: int = Field(ge=1, le=100)
 
 class GenerateMediaFromTextRequest(SQLModel):
+    output_media_type: MediaType
     positive_prompt: str | None = Field(default=None, max_length=1000)
     negative_prompt: str | None = Field(default=None, max_length=1000)
-    media_type: MediaType
     sd_model: str = Field(max_length=100)
     is_public: bool = Field(default=False)
     tags: List[str] = Field(default=[])
     num_outputs: int = Field(default=1, ge=1, le=10)  # Number of media to generate
+    credit_cost: int = Field(default=0, ge=0)
 
 class GenerateMediaFromTextResponse(SQLModel):
-    generated_media: List[MediaResponse]
+    task_id: str
+    message: str
+
+# class GenerateMediaFromTextResult(SQLModel):
+#     generated_media: List[MediaResponse]
+#     credits_consumed: int
 
 class GenerateMediaByMediaRequest(SQLModel):
     input_image: str = Field(..., description="Base64 encoded input image")
@@ -270,10 +276,10 @@ class GenerateMediaByMediaResponse(SQLModel):
     task_id: str
     message: str
 
-class GenerateMediaByMediaResult(SQLModel):
-    generated_media: List[MediaResponse]
-    input_media: MediaResponse
-    credits_consumed: int
+# class GenerateMediaByMediaResult(SQLModel):
+#     generated_media: List[MediaResponse]
+#     input_media: MediaResponse
+#     credits_consumed: int
 
 class UpdateMediaRequest(SQLModel):
     positive_prompt: str | None = Field(default=None, max_length=1000)

@@ -246,11 +246,7 @@ from typing import List
 from app.ComfyUIClient import ComfyUIClient
 from app.core.config import settings
 
-def generate_media_from_text(request_data: dict, user_id: int):
-    # Implement actual RunPod serverless call for text-to-image generation
-    pass
-
-def generate_media_from_media(request_data: dict, user_id: int) -> List[dict]:
+def generate_media_from_text(request_data: dict) -> List[dict]:
     try:
         client = ComfyUIClient(
             endpoint_url=settings.RUNPOD_ENDPOINT_URL,
@@ -262,7 +258,62 @@ def generate_media_from_media(request_data: dict, user_id: int) -> List[dict]:
 
         # Load and update the workflow
         client.load_workflow(
-            filepath=settings.WORKFLOW_TEMPLATE,
+            filepath=settings.WORKFLOW_TEMPLATE_T2I,  # Assuming you have a text-to-image workflow template
+            seed_node_number=3,
+            positive_prompt_node_number=6,
+            output_node_number=9,
+            negative_prompt_node_number=7,
+            size_batch_node_number=5
+        )
+
+        # Generate a random seed
+        seed = random.randint(1, 1500000)
+
+        # Update the seed node
+        client.update_seed_node(seed)
+
+        # Update the positive prompt node
+        client.update_positive_prompt(request_data['positive_prompt'])
+
+        # Update the negative prompt node (if needed)
+        if 'negative_prompt' in request_data and request_data['negative_prompt']:
+            client.update_negative_prompt(request_data['negative_prompt'])
+
+        # Update batch size
+        client.update_output_batch(request_data['num_outputs'])
+
+        # Request images asynchronously
+        response = client.queue_prompt_async()
+
+        if response['status'] == "COMPLETED" and 'output' in response and 'message' in response['output']:
+            generated_images = []
+            for img_base64 in response['output']['message']:
+                output_file_type = determine_file_type(img_base64)
+                generated_images.append({
+                    "data": img_base64,
+                    "file_type": output_file_type,
+                    "seed": seed
+                })
+            return generated_images
+        else:
+            raise Exception(f"Job failed with status: {response.get('status', 'Unknown')}")
+
+    except Exception as e:
+        raise Exception(f"Error in generate_media_from_text: {str(e)}")
+
+def generate_media_from_media(request_data: dict) -> List[dict]:
+    try:
+        client = ComfyUIClient(
+            endpoint_url=settings.RUNPOD_ENDPOINT_URL,
+            api_key=settings.RUNPOD_API_KEY,
+            endpoint_id=settings.RUNPOD_ENDPOINT_ID,
+            output_dir=None,  # We don't need local output directory
+            input_dir=None    # We don't need local input directory
+        )
+
+        # Load and update the workflow
+        client.load_workflow(
+            filepath=settings.WORKFLOW_TEMPLATE_I2I,
             load_image_node_number=72,
             seed_node_number=63,
             positive_prompt_node_number=66,
@@ -290,21 +341,8 @@ def generate_media_from_media(request_data: dict, user_id: int) -> List[dict]:
         # Determine the input file type
         input_file_type = determine_file_type(request_data['input_image'])
 
-        # Prepare the input image (already in base64 format in request_data)
-        image_data = {
-            "name": f"input_image_{user_id}.{input_file_type}",
-            "image": request_data['input_image']
-        }
-        
-        if "images" not in client.payload["input"]:
-            client.payload["input"]["images"] = []
-        client.payload["input"]["images"].append(image_data)
-
-        # Update the image file name in the workflow
-        load_image_node = client.workflow.get(str(client.load_image_node_number))
-        if not load_image_node:
-            raise ValueError(f"Load image node {client.load_image_node_number} not found in the workflow JSON.")
-        load_image_node['inputs']['image'] = image_data['name']
+        # update input image in the payload
+        client.update_input_image(request_data['input_image'], input_file_type)
 
         # Request images asynchronously
         response = client.queue_prompt_async()

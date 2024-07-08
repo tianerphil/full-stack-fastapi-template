@@ -128,7 +128,8 @@ class Settings(BaseSettings):
     RUNPOD_ENDPOINT_URL: str
     RUNPOD_ENDPOINT_ID: str
     RUNPOD_API_KEY: str
-    WORKFLOW_TEMPLATE: str
+    WORKFLOW_TEMPLATE_I2I: str
+    WORKFLOW_TEMPLATE_T2I: str
 
     DEBUG: bool = True
 

@@ -23,8 +23,8 @@ celery_app = Celery("worker", broker=settings.REDIS_URL, backend=settings.REDIS_
 
 celery_app.conf.update(
     task_routes={
-        "app.worker.upload_media_to_s3_task": "main-queue",
-        "app.worker.delete_media_from_s3_task": "main-queue",
+        #"app.worker.upload_media_to_s3_task": "main-queue",
+        #"app.worker.delete_media_from_s3_task": "main-queue",
         "app.worker.generate_media_from_text_task": "main-queue",
         "app.worker.generate_media_from_media_task": "main-queue",
     },
@@ -33,65 +33,104 @@ celery_app.conf.update(
     worker_task_log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)'
 )
 
-@celery_app.task(name="upload_media_to_s3_task")
-def upload_media_to_s3_task(media_data: str, file_type: str):
-    s3_url = upload_to_s3(media_data, file_type)
-    return s3_url
+# @celery_app.task(name="upload_media_to_s3_task")
+# def upload_media_to_s3_task(media_data: str, file_type: str):
+#     s3_url = upload_to_s3(media_data, file_type)
+#     return s3_url
 
-@celery_app.task(name="delete_media_from_s3_task")
-def delete_media_from_s3_task(s3_url: str, media_id: int):
-    success = delete_from_s3(s3_url)
-    if success:
-        with Session(engine) as session:
-            media = session.get(Media, media_id)
-            if media:
-                session.delete(media)
-                session.commit()
-    return success
+# @celery_app.task(name="delete_media_from_s3_task")
+# def delete_media_from_s3_task(s3_url: str, media_id: int):
+#     success = delete_from_s3(s3_url)
+#     if success:
+#         with Session(engine) as session:
+#             media = session.get(Media, media_id)
+#             if media:
+#                 session.delete(media)
+#                 session.commit()
+#     return success
 
 @celery_app.task(name="generate_media_from_text_task")
-def generate_media_from_text_task(request_data: dict, user_id: int):
-    generated_media = generate_media_from_text(request_data, user_id)
+def generate_media_from_text_task(request_data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+    # runpod query
+    generated_media = generate_media_from_text(request_data)
+    logger.debug(f'Generated media: {len(generated_media)}')
     
-    with Session(engine) as session:
-        new_media_entries = []
+    db_generator = get_db()
+    
+    try:
+        session = next(db_generator)
+        
+        # Create the GenerationJob first
+        job = GenerationJob(
+            user_id=user_id,
+            credits_consumed=request_data['credit_cost'],
+            job_type="text_to_image",
+            status="completed",
+            created_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc)
+        )
+        session.add(job)
+        session.flush()  # This will assign an id to the job
+
+        new_media_entries: List[Media] = []
         for media in generated_media:
+            s3_url = upload_to_s3(media['data'])
+            
             new_media = Media(
                 user_id=user_id,
-                media_type=request_data['media_type'],
-                file_type=media.file_type,
+                media_type=request_data['output_media_type'],
+                file_type=media['file_type'],
                 positive_prompt=request_data['positive_prompt'],
-                negative_prompt=request_data['negative_prompt'],
-                seed=media.seed,
+                negative_prompt=request_data.get('negative_prompt', ''),
+                seed=media['seed'],
                 sd_model=request_data['sd_model'],
-                s3_url=media.s3_url,
+                s3_url=s3_url,
                 is_public=request_data['is_public'],
+                created_at=datetime.now(timezone.utc),
+                generation_job_id=job.id  # Associate with the GenerationJob
             )
             session.add(new_media)
             new_media_entries.append(new_media)
+            
+        session.flush()
 
-        session.commit()
-        
-        for new_media in new_media_entries:
-            for tag_name in request_data['tags']:
-                tag = crud.get_or_create_tag(session, tag_name)
-                new_media.tags.append(tag)
-        
-        job = GenerationJob(
+        # prepare response
+        generated_media_responses = []
+        for media in new_media_entries:
+            media_data = media.model_dump()
+            media_data['s3_url'] = generate_presigned_url(str(media.s3_url))
+            generated_media_responses.append(MediaResponse(**media_data))
+
+        crud.deduct_user_credits(session=session, user_id=user_id, amount=request_data['credit_cost'])
+        credit_transaction = CreditTransaction(
             user_id=user_id,
-            media_id=new_media_entries[0].id,
-            credits_consumed=len(new_media_entries),
-            job_type="text_to_image",
-            status="completed"
+            amount=-request_data['credit_cost'],
+            transaction_type="image_generation",
+            transaction_date=datetime.now(timezone.utc),
+            description=f"Generated {len(new_media_entries)} images from text prompt"
         )
-        session.add(job)
+        session.add(credit_transaction)
         session.commit()
+        session.refresh(job)
+        
+        result = {
+            "status": "COMPLETED",
+            "job_id": job.id,
+            "generated_media": [media.model_dump() for media in generated_media_responses],
+            "credits_consumed": request_data['credit_cost']
+        }
 
-    return [media.id for media in new_media_entries]
+        return result
+
+    except Exception as e:
+        session.rollback()
+        raise
+    finally:
+        next(db_generator, None)
 
 @celery_app.task(name="generate_media_from_media_task")
 def generate_media_from_media_task(request_data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
-    generated_media = generate_media_from_media(request_data, user_id)
+    generated_media = generate_media_from_media(request_data)
     logger.debug(f'Generated media: {len(generated_media)}')
     
     db_generator = get_db()

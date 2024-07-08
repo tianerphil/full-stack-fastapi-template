@@ -76,5 +76,7 @@ def deduct_user_credits(*, session: Session, user_id: int, amount: int) -> bool:
     
     user.credit_balance -= amount
     session.add(user)
-    session.commit()
+    session.flush()
+    #session.commit()
+
     return True

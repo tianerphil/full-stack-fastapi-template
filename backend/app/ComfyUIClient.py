@@ -113,8 +113,18 @@ class ComfyUIClient:
         try:
             neg_prompt_node = self.workflow.get(str(self.negative_prompt_node_number))
             if not neg_prompt_node:
-                raise ValueError(f"Negative prompt node {self.positive_prompt_node_number} not found in the workflow JSON.")
-            neg_prompt_node['inputs']['text'] = str(prompt_text)
+                raise ValueError(f"Negative prompt node {self.negative_prompt_node_number} not found in the workflow JSON.")
+
+            # Get the existing negative prompts
+            existing_prompts = neg_prompt_node['inputs'].get('text', '')
+
+            # Append the new negative prompt
+            if existing_prompts:
+                updated_prompts = f"{existing_prompts} {prompt_text}"
+            else:
+                updated_prompts = prompt_text
+
+            neg_prompt_node['inputs']['text'] = updated_prompts
             self.logger.debug("Updated negative prompt node %s: %s", self.negative_prompt_node_number, neg_prompt_node)
         except Exception as e:
             self.logger.error(f"Error updating negative prompt node: {e}")
@@ -171,6 +181,41 @@ class ComfyUIClient:
         except Exception as e:
             self.logger.error(f"Error uploading image: {e}")
             raise
+
+    def update_input_image(self, base64_image_data: str, input_file_type: str):
+        """
+        if input image is provided, updates the file name and base64 data in the payload.
+        
+        :param base64_image_data: Base64 encoded string representing the image.
+        :param input_file_type: The file type of the input image.
+        """
+        try:
+            # Generate a unique file name for the input image
+            unique_id = str(uuid.uuid4())
+            image_file_name = f"input_image_{unique_id}.{input_file_type}"
+            
+            # Prepare the input image data
+            image_data = {
+                "name": image_file_name,
+                "image": base64_image_data
+            }
+
+            # Add image data to the payload
+            if "images" not in self.payload["input"]:
+                self.payload["input"]["images"] = []
+            self.payload["input"]["images"].append(image_data)
+
+            # Update the image file name in the workflow
+            load_image_node = self.workflow.get(str(self.load_image_node_number))
+            if not load_image_node:
+                raise ValueError(f"Load image node {self.load_image_node_number} not found in the workflow JSON.")
+            load_image_node['inputs']['image'] = image_data['name']
+
+            self.logger.info(f"Image {image_file_name} encoded to base64 and added to payload.")
+        
+        except Exception as e:
+            self.logger.error(f"Failed to upload image: {e}")
+            raise   
 
     def save_result_images(self, resp_json):
         try:
